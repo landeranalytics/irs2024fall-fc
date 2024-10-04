@@ -40,7 +40,15 @@ After you have R and your favorite editor installed, you should install the pack
 
 <div class="wrapMe sourceCode r">
 
-    install.packages(c('ggplot2', 'dplyr', 'tidyr', 'purrr'))
+    install.packages(c('forecast', 'fable', 'dplyr', 'ggplot2', 'fabletools', 'feasts', 'tsibble'))
+
+</div>
+
+And optionally, you may install:
+
+<div class="wrapMe sourceCode r">
+
+    install.packages(c('lubridate', 'modeltime', 'fable.prophet'))
 
 </div>
 

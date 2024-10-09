@@ -66,6 +66,93 @@ View(gg)
 gg$data
 
 
+# decomposition -----------------------------------------------------------
+
+AirPassengers
+
+# additive
+decomposed <- decompose(AirPassengers, type = "additive")
+decomposed
+plot(AirPassengers)
+plot(decomposed)
+
+# multiplicative
+decomposed <- decompose(AirPassengers, type = "multiplicative")
+decomposed
+plot(decomposed)
+
+# stl
+?stl
+decomposed <- stl(AirPassengers, s.window = 12) # investigate
+plot(decomposed)
+
+# s.window
+stl(AirPassengers, s.window = 12) |> plot()
+stl(AirPassengers, s.window = 12) |> plot()
+stl(AirPassengers, s.window = 30) |> plot()
+stl(AirPassengers, s.window = 365) |> plot()
+stl(AirPassengers, s.window = "periodic") |> plot()
+
+# decomposition using fable
+dat_example <- pedestrian |>
+  dplyr::filter(Sensor == dplyr::first(Sensor)) |>
+  fill_gaps()
+
+dat_example |>
+  fabletools::model(tslm = TSLM(Count ~ trend())) |>
+  interpolate(dat_example) |>
+  model(stl = feasts::STL(Count)) |>
+  components() |>
+  autoplot()
+
+
+# tsibble -----------------------------------------------------------------
+
+library(ggplot2)
+library(tsibble)
+library(forecast)
+library(fable)
+
+data("pedestrian")
+pedestrian
+dim(pedestrian)
+nrow(pedestrian)
+ncol(pedestrian)
+class(pedestrian)
+
+# plot a panel plot
+autoplot(pedestrian, Count) + facet_wrap(~Sensor)
+
+
+has_gaps(pedestrian)
+count_gaps(pedestrian)
+scan_gaps(pedestrian)
+fill_gaps(pedestrian)
+
+fill_gaps(pedestrian) |> scan_gaps()
+
+
+pedestrian |>
+  scan_gaps() |>
+  ggplot(aes(x = Date_Time, y = 1)) +
+  geom_col() +
+  facet_wrap(~Sensor)
+
+
+pedestrian_filled <- fill_gaps(pedestrian)
+
+pedestrian_filled |>
+  fabletools::model(tslm = TSLM(Count ~ trend())) |>
+  interpolate(pedestrian_filled)
+
+
+pedestrian_int <- pedestrian_filled |>
+  fabletools::model(tslm = TSLM(Count ~ trend())) |>
+  interpolate(pedestrian_filled)
+
+autoplot(pedestrian, Count) + facet_wrap(~Sensor)
+autoplot(pedestrian_int, Count) + facet_wrap(~Sensor)
+
 
 
 

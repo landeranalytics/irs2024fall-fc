@@ -83,17 +83,23 @@ plot(decomposed)
 
 # stl
 ?stl
-decomposed <- stl(AirPassengers, s.window = 12) # investigate
+decomposed <- stl(AirPassengers, s.window = 12)
 plot(decomposed)
 
 # s.window
 stl(AirPassengers, s.window = 12) |> plot()
-stl(AirPassengers, s.window = 12) |> plot()
-stl(AirPassengers, s.window = 30) |> plot()
-stl(AirPassengers, s.window = 365) |> plot()
+stl(AirPassengers, s.window = 25) |> plot()
+stl(AirPassengers, s.window = "p") |> plot()
 stl(AirPassengers, s.window = "periodic") |> plot()
 
+frequency(co2)
+stl(log(co2), s.window = 21) |> plot()
+stl(log(co2), s.window = "per") |> plot()
+
 # decomposition using fable
+library(forecast)
+library(fable)
+library(tsibble)
 dat_example <- pedestrian |>
   dplyr::filter(Sensor == dplyr::first(Sensor)) |>
   fill_gaps()
@@ -102,6 +108,7 @@ dat_example |>
   fabletools::model(tslm = TSLM(Count ~ trend())) |>
   interpolate(dat_example) |>
   model(stl = feasts::STL(Count)) |>
+  # model(stl = feasts::STL(Count ~ trend(window = 10))) |>
   components() |>
   autoplot()
 
@@ -153,6 +160,86 @@ pedestrian_int <- pedestrian_filled |>
 autoplot(pedestrian, Count) + facet_wrap(~Sensor)
 autoplot(pedestrian_int, Count) + facet_wrap(~Sensor)
 
+
+
+# modeling - basics -------------------------------------------------------
+
+library(fable)
+library(fabletools)
+
+
+pedestrian_int
+rwf
+
+
+ped_bir <- pedestrian_int |>
+  dplyr::filter(Sensor == dplyr::first(Sensor)) |>
+  dplyr::filter(
+    lubridate::year(Date_Time) == 2015,
+    lubridate::month(Date_Time) %in% 1:2
+  )
+
+# fit a random walk using forecast
+rw_model <- rwf(ped_bir, h = 24)
+rw_model
+class(rw_model)
+
+plot(rw_model, main = "Random Walk Forecast")
+
+# fit many models using fable
+my_models <- pedestrian_int |>
+  fabletools::model(
+    mean = fable::MEAN(Count),
+    naive = fable::NAIVE(Count),
+    snaive = fable::SNAIVE(Count)
+  )
+
+# this returns a mable
+my_models
+class(my_models)
+
+plot(my_models)
+autoplot(my_models)
+
+# forecast
+my_models |>
+  forecast(h = 24)
+
+my_models |>
+  forecast(h = 24) |>
+  autoplot()
+
+# include historical data in our plot
+my_models |>
+  forecast(h = 24) |>
+  autoplot(
+    pedestrian_int
+  )
+
+# limit historical data
+my_models |>
+  forecast(h = 24) |>
+  autoplot(
+    pedestrian_int |> dplyr::filter(Date_Time >= as.Date("2016-12-01"))
+  )
+
+my_models |>
+  dplyr::select(Sensor, snaive) |>
+  forecast(h = 24) |>
+  autoplot(
+    pedestrian_int |> dplyr::filter(Date_Time >= as.Date("2016-12-01"))
+  )
+
+# combination model
+my_models |>
+  dplyr::mutate(
+    comb = (mean + naive) / 2
+  ) |>
+  dplyr::select(Sensor, comb) |>
+  forecast(h = 24) |>
+  autoplot(
+    pedestrian_int |> dplyr::filter(Date_Time >= as.Date("2016-12-01"))
+  )
 
 
 

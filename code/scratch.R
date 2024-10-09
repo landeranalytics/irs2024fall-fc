@@ -275,6 +275,185 @@ ped_metrics |>
 #   facet_wrap(~Sensor)
 
 
+# cross validation --------------------------------------------------------
 
+pedestrian_int
+pedestrian_int |> dplyr::count(Sensor)
+
+ped_stretched <- pedestrian_int |>
+  stretch_tsibble(.step = 24*30, .init = 16000)
+
+ped_stretched |>
+  dplyr::distinct(Sensor, .id) |>
+  View()
+
+# View(ped_stretched)
+
+pedestrian_int |>
+  slide_tsibble(.size = 360, .step = 30)
+
+pedestrian_int |>
+  tile_tsibble(.size = 360)
+
+
+
+# ets and arima -----------------------------------------------------------
+
+range(pedestrian_int$Date_Time)
+
+.step <- 24*30
+ped_stretched <- pedestrian_int |>
+  dplyr::filter(Date_Time >= as.Date("2016-01-01")) |>
+  stretch_tsibble(.step = .step, .init = 800)
+
+ped_stretched <- ped_stretched |>
+  dplyr::group_by(.id) |> # BUG HERE: should be group_by(Sensor, .id)
+  dplyr::mutate(is_train = Date_Time < max(Date_Time) - .step) |>
+  dplyr::ungroup()
+
+table(ped_stretched$is_train)
+
+
+nrow(dplyr::distinct(ped_stretched, Sensor, .id))
+
+stretched_train <- ped_stretched |>
+  dplyr::filter(is_train)
+stretched_test <- ped_stretched |>
+  dplyr::filter(!is_train)
+
+# train the models
+ped_models <- stretched_train |>
+  fabletools::model(
+    snaive = fable::SNAIVE(Count),
+    ets = fable::ETS(Count),
+    ets = fable::ETS(Count ~ error() + trend() + season()),
+    arima = fable::ARIMA(Count ~ trend() + season())
+    # ets = fable::ETS(Count ~ error() + trend('A') + season('M'))
+  )
+
+# make forecasts
+ped_fc <- ped_models |>
+  fabletools::forecast(new_data = stretched_test)
+
+# check metrics
+ped_fc |>
+  fabletools::accuracy(stretched_test)
+
+#
+ped_fc |>
+  fabletools::accuracy(stretched_test, by = c(".model", "Sensor"))
+
+# visualize
+ped_fc |>
+  fabletools::accuracy(stretched_test, by = c(".model", "Sensor"))
+
+
+# EXERCISE
+
+library(forecast)
+library(fable)
+library(fabletools)
+library(tsibble)
+library(ggplot2)
+
+pedestrian_filled <- fill_gaps(pedestrian)
+
+pedestrian_int <- pedestrian_filled |>
+  fabletools::model(tslm = TSLM(Count ~ trend())) |>
+  interpolate(pedestrian_filled)
+
+ped_daily <- pedestrian |>
+  group_by_key() |>
+  tsibble::index_by(Date) |>
+  dplyr::summarize(n = sum(Count))
+
+# fill missing values
+ped_daily <- ped_daily |>
+  fill_gaps() |>
+  model(TSLM(n)) |>
+  interpolate(fill_gaps(ped_daily))
+
+# plot it
+autoplot(ped_daily) + facet_wrap(~Sensor)
+
+.step <- 30
+range(ped_daily$Date)
+stretched <- ped_daily |>
+  # dplyr::mutate(exo_1 = rnorm(2877)) |>
+  stretch_tsibble(.step = .step, .init = 600) |>
+  dplyr::group_by(Sensor, .id) |>
+  dplyr::mutate(is_train = Date < max(Date) - .step) |>
+  dplyr::ungroup()
+
+table(stretched$is_train)
+
+stretched |>
+  # dplyr::filter(Sensor == "Southern Cross Station") |>
+  ggplot(aes(x = Date, y = n, color = is_train)) +
+  geom_line() +
+  facet_grid(Sensor~.id, scales = "free_y")
+
+stretched_train <- stretched |>
+  dplyr::filter(is_train)
+stretched_test <- stretched |>
+  dplyr::filter(!is_train)
+
+#### Train
+ped_models <- stretched_train |>
+  model(
+    ets = fable::ETS(n ~ error() + trend() + season()),
+    arima = fable::ARIMA(n ~ trend() + season())
+  )
+
+nrow(ped_models)
+stretched |> dplyr::distinct(Sensor, .id) |> nrow()
+
+
+# make forecasts
+ped_fc <- ped_models |>
+  fabletools::forecast(new_data = stretched_test)
+
+# evaluate
+ped_fc |> fabletools::accuracy(stretched_test)
+ped_fc |> fabletools::accuracy(stretched_test, by = c('Sensor', '.model'))
+ped_fc |>
+  fabletools::accuracy(stretched_test, by = c('Sensor', '.model')) |>
+  ggplot(aes(x = RMSE, y = .model)) +
+  geom_col() +
+  facet_wrap(~Sensor)
+
+
+
+
+# exogenous ---------------------------------------------------------------
+
+# incomplete example data
+.data <- tibble::tibble(
+  n = rnorm(10),
+  temperature = rnorm(10),
+  is_lockdown = rbinom(n = 10, size = 1, prob = c(0.5, 0.5))
+)
+
+# estimate lambda
+lambda <- pedestrian_int |>
+  fabletools::features(Count, feasts::guerrero) |>
+  dplyr::pull(lambda_guerrero) |>
+  mean()
+
+# example modeling
+# .data |>
+#   fabletools::model(
+#     mean = MEAN(box_cox(n, lambda)),
+#     naive = NAIVE(box_cox(n, lambda)),
+#     snaive = fable::SNAIVE(fabletools::box_cox(n, lambda)),
+#     drift = fable::RW(fabletools::box_cox(n, lambda) ~ drift()),
+#     ets = fable::ETS(fabletools::box_cox(n, lambda) ~ trend() + season()),
+#     arima = fable::ARIMA(fabletools::box_cox(n, lambda) ~ temperature + rain + snow + wind_speed + is_lockdown + is_covid + is_holiday + is_workday + n_workers),
+#     nnts = NNETAR(box_cox(n, lambda) ~ temperature + rain + snow + wind_speed + is_lockdown + is_covid + is_holiday + is_workday + n_workers),
+#     prophet = fable.prophet::prophet(fabletools::box_cox(n, lambda) ~ temperature + rain + snow + wind_speed + is_lockdown + is_covid + is_holiday + is_workday + n_workers +
+#                                        growth('linear') +
+#                                        season('week', type = 'additive') +
+#                                        season('year', type = 'additive'))
+#   )
 
 

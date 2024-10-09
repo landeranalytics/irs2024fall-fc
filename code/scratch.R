@@ -242,4 +242,39 @@ my_models |>
   )
 
 
+# model evaluation --------------------------------------------------------
+
+ped_train <- pedestrian_int |>
+  dplyr::filter(lubridate::year(Date_Time) == 2015)
+
+ped_test <- pedestrian_int |>
+  dplyr::filter(lubridate::year(Date_Time) == 2016)
+
+ped_models <- ped_train |>
+  fabletools::model(
+    mean = fable:::MEAN(Count),
+    naive = fable::NAIVE(Count),
+    snaive = fable::SNAIVE(Count)
+  )
+
+fc <- fabletools::forecast(ped_models, new_data = ped_test)
+ped_metrics <- fabletools::accuracy(fc, ped_test)
+View(ped_metrics)
+
+ped_metrics |>
+  tibble::as_tibble() |>
+  dplyr::group_by(Sensor) |>
+  dplyr::summarize(best_model = .model[which.min(RMSE)])
+
+#
+# ped_metrics |>
+#   dplyr::select(-.type) |>
+#   tidyr::pivot_longer(-c('.model', 'Sensor')) |>
+#   ggplot(aes(x = value, y = .model)) +
+#   geom_col() +
+#   facet_wrap(~Sensor)
+
+
+
+
 
